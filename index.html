@@ -86,6 +86,14 @@ textarea.inp{resize:vertical;min-height:70px}
 .sc.on.lo{background:var(--red);border-color:var(--red)}
 .sc.on.mid{background:var(--amber);border-color:var(--amber)}
 .critnote{margin-top:9px;padding:8px 11px;font-size:13px;background:var(--card)}
+.ac-wrap{position:relative;display:block}
+.ac-list{position:absolute;top:100%;left:0;right:0;z-index:60;background:var(--card);
+  border:1px solid var(--line);border-radius:10px;margin-top:4px;max-height:260px;overflow:auto;
+  box-shadow:var(--shadow-lg);display:none}
+.ac-item{padding:11px 13px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line)}
+.ac-item:last-child{border-bottom:none}
+.ac-item:active,.ac-item.sel{background:var(--accent-soft)}
+.ac-empty{padding:11px 13px;font-size:13px;color:var(--sub)}
 
 /* total bar */
 .totbar{position:sticky;bottom:0;z-index:40;background:var(--card);border:1px solid var(--line);
@@ -248,8 +256,8 @@ textarea.inp{resize:vertical;min-height:70px}
     <div class="card">
       <h3><span class="pip"></span>ข้อมูลการทดสอบ</h3>
       <div class="grid2">
-        <div><label class="fl">รายการ / เมนู *</label><input class="inp" id="f_menu" placeholder="เช่น ปีกไก่ทอด"></div>
-        <div><label class="fl">สถานที่ / สาขา *</label><input class="inp" id="f_branch" placeholder="เช่น EM-Emporium" list="branchList"><datalist id="branchList"></datalist></div>
+        <div><label class="fl">รายการ / เมนู *</label><input class="inp" id="f_menu" placeholder="เช่น แกงจืดเงาะยัดไส้หมูสับ"></div>
+        <div><label class="fl">สถานที่ / สาขา *</label><input class="inp" id="f_branch" placeholder="เช่น EMQ NARA" list="branchList"><datalist id="branchList"></datalist></div>
         <div><label class="fl">ผู้เข้าทดสอบ</label><input class="inp" id="f_tester" placeholder="ชื่อผู้เข้าทดสอบ"></div>
         <div><label class="fl">วันที่</label><input class="inp" type="date" id="f_date"></div>
         <div><label class="fl">ผู้ประเมิน</label><input class="inp" id="f_eval" placeholder="ชื่อผู้ประเมิน"></div>
@@ -405,27 +413,40 @@ async function loadRecords(){
     records = (await Store.get(K_REC))||[];
   }
 }
-async function loadBranchesUI(){
-  if(!USE_API) return;
-  try{
-    const rows = await api('/api/branches?limit=1000');
-    window._branchMap = {};
-    $('#branchList').innerHTML = rows.map(r=>{ window._branchMap[r.name]=r.shop_code; return `<option value="${esc(r.name)}">`; }).join('');
-  }catch(e){}
-}
-function setupMenuSearch(){
-  if(!USE_API) return;
-  let dl = document.getElementById('menuList');
-  if(!dl){ dl=document.createElement('datalist'); dl.id='menuList'; document.body.appendChild(dl); $('#f_menu').setAttribute('list','menuList'); }
-  let t;
-  $('#f_menu').addEventListener('input', e=>{
-    clearTimeout(t); const q=e.target.value.trim(); if(q.length<2) return;
-    t=setTimeout(async()=>{
-      try{ const rows=await api(`/api/menus?q=${encodeURIComponent(q)}&limit=30`);
-        window._menuMap={}; dl.innerHTML=rows.map(r=>{ window._menuMap[r.name]=r.item_code; return `<option value="${esc(r.name)}">`; }).join('');
-      }catch(e){}
-    }, 300);
+async function loadBranchesUI(){ /* ใช้ attachAutocomplete แทน datalist แล้ว */ }
+function setupMenuSearch(){ /* ใช้ attachAutocomplete แทน datalist แล้ว */ }
+/* ---- custom autocomplete (เสถียรบน iOS/iPad) ---- */
+function attachAutocomplete(input, fetchFn, minLen=1){
+  input.removeAttribute('list');
+  const wrap=document.createElement('div'); wrap.className='ac-wrap';
+  input.parentNode.insertBefore(wrap, input); wrap.appendChild(input);
+  const list=document.createElement('div'); list.className='ac-list'; wrap.appendChild(list);
+  let t, items=[];
+  const hide=()=>{ list.style.display='none'; list.innerHTML=''; };
+  function render(rows){
+    items=rows;
+    if(!rows.length){ list.innerHTML='<div class="ac-empty">ไม่พบรายการ</div>'; list.style.display='block'; return; }
+    list.innerHTML=rows.map((r,i)=>`<div class="ac-item" data-i="${i}">${esc(r.value)}</div>`).join('');
+    list.style.display='block';
+    list.querySelectorAll('.ac-item').forEach(el=>{
+      const pick=ev=>{ ev.preventDefault(); const r=items[+el.dataset.i]; input.value=r.value; input.dataset.code=r.code||''; hide(); };
+      el.addEventListener('mousedown',pick); el.addEventListener('touchstart',pick,{passive:false});
+    });
+  }
+  input.addEventListener('input',()=>{
+    input.dataset.code=''; clearTimeout(t); const q=input.value.trim();
+    if(q.length<minLen){ hide(); return; }
+    t=setTimeout(async()=>{ try{ render(await fetchFn(q)); }catch(e){ hide(); } }, 250);
   });
+  input.addEventListener('blur',()=>setTimeout(hide,180));
+}
+async function fetchBranches(q){
+  const rows=await api(`/api/branches?q=${encodeURIComponent(q)}&limit=20`);
+  return rows.map(r=>({value:r.name, code:r.shop_code}));
+}
+async function fetchMenus(q){
+  const rows=await api(`/api/menus?q=${encodeURIComponent(q)}&limit=20`);
+  return rows.map(r=>({value:r.name, code:r.item_code}));
 }
 async function openDetailAPI(id){
   let r; try{ r=await api(`/api/tests/${id}`); }catch(e){ toast('โหลดไม่สำเร็จ: '+e.message); return; }
@@ -470,6 +491,7 @@ async function openDetailAPI(id){
 function editRecordAPI(id,r){
   editingId=id;
   $('#f_menu').value=r.menu_name||'';$('#f_branch').value=r.shop_name||'';
+  $('#f_branch').dataset.code=r.shop_code||'';$('#f_menu').dataset.code=r.item_code||'';
   $('#f_tester').value=r.tester_name||'';$('#f_date').value=(r.test_date||'').slice(0,10);
   $('#f_eval').value=r.chef_name||'';$('#f_appr').value=r.approver||'';$('#f_comment').value=r.comment||'';
   const sc={},nt={}; (r.details||[]).forEach(d=>{sc[d.criteria_code]=d.score;if(d.note)nt[d.criteria_code]=d.note;});
@@ -650,8 +672,8 @@ async function saveRecord(){
   if(USE_API){
     const uidv=editingId||uid();
     const payload={ test_uid:uidv,
-      shop_code:window._branchMap[branch]||undefined, branch_name:branch,
-      item_code:window._menuMap[menu]||undefined, menu_name:menu,
+      shop_code:$('#f_branch').dataset.code||window._branchMap[branch]||undefined, branch_name:branch,
+      item_code:$('#f_menu').dataset.code||window._menuMap[menu]||undefined, menu_name:menu,
       chef_id:session?session.chef_id:undefined, chef_username:session?session.u:undefined,
       tester_name:$('#f_tester').value.trim(), approver:$('#f_appr').value.trim(),
       test_date:$('#f_date').value||todayISO(), scores:sc, notes:getNotes(),
@@ -685,6 +707,7 @@ async function saveRecord(){
 function resetForm(){
   editingId=null;pendingImg={t:null,a:null};
   ['f_menu','f_branch','f_tester','f_appr','f_comment'].forEach(i=>$('#'+i).value='');
+  $('#f_branch').dataset.code='';$('#f_menu').dataset.code='';
   $('#f_eval').value=session?session.name:'';$('#f_pos').value=session?(session.pos||''):'';
   $('#f_date').value=todayISO();
   $$('#critWrap .crit').forEach(c=>setScore(c,5));calcTotal();
@@ -893,7 +916,7 @@ async function init(){
   buildForm();$('#f_date').value=todayISO();
   injectIcons();
   await setTheme((await Store.get('ftr_theme'))||'light');
-  if(USE_API){ loadBranchesUI(); setupMenuSearch(); }
+  if(USE_API){ attachAutocomplete($('#f_branch'),fetchBranches,1); attachAutocomplete($('#f_menu'),fetchMenus,2); }
   else{ await seedUsers(); }
   await loadRecords();
   fillSelectors();
