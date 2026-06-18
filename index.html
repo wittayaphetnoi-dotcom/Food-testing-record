@@ -248,8 +248,8 @@ textarea.inp{resize:vertical;min-height:70px}
     <div class="card">
       <h3><span class="pip"></span>ข้อมูลการทดสอบ</h3>
       <div class="grid2">
-        <div><label class="fl">รายการ / เมนู *</label><input class="inp" id="f_menu" placeholder="เช่น ปีกไก่ทอดน้ำปลา"></div>
-        <div><label class="fl">สถานที่ / สาขา *</label><input class="inp" id="f_branch" placeholder="เช่น EMQ" list="branchList"><datalist id="branchList"></datalist></div>
+        <div><label class="fl">รายการ / เมนู *</label><input class="inp" id="f_menu" placeholder="เช่น แกงจืดเงาะยัดไส้หมูสับ"></div>
+        <div><label class="fl">สถานที่ / สาขา *</label><input class="inp" id="f_branch" placeholder="เช่น EMQ NARA" list="branchList"><datalist id="branchList"></datalist></div>
         <div><label class="fl">ผู้เข้าทดสอบ</label><input class="inp" id="f_tester" placeholder="ชื่อผู้เข้าทดสอบ"></div>
         <div><label class="fl">วันที่</label><input class="inp" type="date" id="f_date"></div>
         <div><label class="fl">ผู้ประเมิน</label><input class="inp" id="f_eval" placeholder="ชื่อผู้ประเมิน"></div>
@@ -375,6 +375,138 @@ const MAX=ALL_ITEMS.length*5; // 80
 const LABEL=Object.fromEntries(ALL_ITEMS.map(i=>[i[0],i[1]]));
 
 /* ---------- state ---------- */
+/* ===================== API LAYER ===================== */
+const USE_API = true;                              // true=ใช้ API(.88), false=local เดิม
+const API = "https://foodtest.mobile1234.site";
+const KEY = "foodtest123";
+window._branchMap = {}; window._menuMap = {};
+async function api(path, opt={}){
+  const o = Object.assign({headers:{}}, opt);
+  o.headers["X-API-Key"] = KEY;
+  if(o.body && !(o.body instanceof FormData)){ o.headers["Content-Type"]="application/json"; o.body=JSON.stringify(o.body); }
+  const r = await fetch(API+path, o);
+  if(!r.ok){ let m; try{ m=(await r.json()).detail; }catch(e){ m=r.statusText; } throw new Error(typeof m==='string'?m:('HTTP '+r.status)); }
+  return r.status===204 ? null : r.json();
+}
+async function uploadImg(uidv, type, dataURL){
+  const blob = await (await fetch(dataURL)).blob();
+  const fd = new FormData(); fd.append('image_type', type); fd.append('file', blob, `${uidv}_${type}.jpg`);
+  await api(`/api/tests/${uidv}/images`, {method:'POST', body:fd});
+}
+async function loadRecords(){
+  if(USE_API){
+    try{
+      const rows = await api('/api/tests?limit=500');
+      records = rows.map(r=>({ id:r.test_uid, date:(r.test_date||'').slice(0,10), menu:r.menu_name,
+        branch:r.shop_name, tester:r.tester_name, eval:r.chef_name,
+        total:r.total_score, pct:Math.round(r.pct), comment:r.comment, _api:true }));
+    }catch(e){ records=[]; toast('โหลดข้อมูลไม่สำเร็จ: '+e.message); }
+  }else{
+    records = (await Store.get(K_REC))||[];
+  }
+}
+async function loadBranchesUI(){
+  if(!USE_API) return;
+  try{
+    const rows = await api('/api/branches?limit=1000');
+    window._branchMap = {};
+    $('#branchList').innerHTML = rows.map(r=>{ window._branchMap[r.name]=r.shop_code; return `<option value="${esc(r.name)}">`; }).join('');
+  }catch(e){}
+}
+function setupMenuSearch(){
+  if(!USE_API) return;
+  let dl = document.getElementById('menuList');
+  if(!dl){ dl=document.createElement('datalist'); dl.id='menuList'; document.body.appendChild(dl); $('#f_menu').setAttribute('list','menuList'); }
+  let t;
+  $('#f_menu').addEventListener('input', e=>{
+    clearTimeout(t); const q=e.target.value.trim(); if(q.length<2) return;
+    t=setTimeout(async()=>{
+      try{ const rows=await api(`/api/menus?q=${encodeURIComponent(q)}&limit=30`);
+        window._menuMap={}; dl.innerHTML=rows.map(r=>{ window._menuMap[r.name]=r.item_code; return `<option value="${esc(r.name)}">`; }).join('');
+      }catch(e){}
+    }, 300);
+  });
+}
+async function openDetailAPI(id){
+  let r; try{ r=await api(`/api/tests/${id}`); }catch(e){ toast('โหลดไม่สำเร็จ: '+e.message); return; }
+  const p=Math.round(r.pct);
+  let img='';
+  if(r.images && r.images.length){
+    const pick=t=>r.images.find(x=>x.image_type===t);
+    const t=pick('template'), a=pick('actual');
+    img=`<div class="detimg">
+      ${t?`<div><img src="${API}/uploads/${t.file_name}"><div class="cap">ต้นแบบ</div></div>`:''}
+      ${a?`<div><img src="${API}/uploads/${a.file_name}"><div class="cap">จริง</div></div>`:''}</div>`;
+  }
+  const byGrp={}; (r.details||[]).forEach(d=>{ (byGrp[d.grp]=byGrp[d.grp]||[]).push(d); });
+  let rowsH='';
+  Object.keys(byGrp).forEach(g=>{ rowsH+=`<tr><td colspan="2" style="font-weight:600;color:var(--accent);padding-top:10px">${esc(g)}</td></tr>`;
+    byGrp[g].forEach(d=>{ const nt=d.note?`<div style="font-size:11.5px;color:var(--sub);margin-top:2px">↳ ${esc(d.note)}</div>`:'';
+      rowsH+=`<tr><td>${esc(d.label)}${nt}</td><td style="color:${d.score<=2?'var(--red)':d.score<=3?'var(--amber)':'var(--text)'}">${d.score}</td></tr>`; }); });
+  $('#sheet').innerHTML=`
+    <h2>${esc(r.menu_name)}</h2>
+    <div style="color:var(--sub);font-size:13px">${esc(r.shop_name)} · ${fmtThaiDate((r.test_date||'').slice(0,10))}</div>
+    <div style="display:flex;align-items:center;gap:10px;margin:14px 0">
+      <span style="font-size:30px;font-weight:700;color:${colorFor(p)}">${r.total_score}<span style="font-size:16px;color:var(--sub)">/${r.max_score}</span></span>
+      <span class="badge" style="background:${colorFor(p)}">${p}%</span></div>
+    ${img}
+    <table class="dtbl">
+      ${r.tester_name?`<tr><td>ผู้เข้าทดสอบ</td><td style="font-weight:400;text-align:right">${esc(r.tester_name)}</td></tr>`:''}
+      ${r.chef_name?`<tr><td>ผู้ประเมิน</td><td style="font-weight:400;text-align:right">${esc(r.chef_name)}</td></tr>`:''}
+      ${rowsH}
+    </table>
+    ${r.comment?`<div style="margin-top:12px;font-size:13px"><b>Comments:</b> ${esc(r.comment)}</div>`:''}
+    <div class="sheet-actions">
+      <button class="btn ghost sm" onclick="window.print()">🖨 พิมพ์</button>
+      <button class="btn ghost sm" data-edit="${id}">✏️ แก้ไข</button>
+      <button class="btn ghost sm" data-del="${id}" style="color:var(--red)">🗑 ลบ</button>
+      <button class="btn sm" data-close style="margin-left:auto">ปิด</button>
+    </div>`;
+  $('#sheet').querySelector('[data-edit]').onclick=()=>editRecordAPI(id,r);
+  $('#sheet').querySelector('[data-del]').onclick=()=>delRecord(id);
+  $('#sheet').querySelector('[data-close]').onclick=closeSheet;
+  $('#ov').classList.add('show');
+}
+function editRecordAPI(id,r){
+  editingId=id;
+  $('#f_menu').value=r.menu_name||'';$('#f_branch').value=r.shop_name||'';
+  $('#f_tester').value=r.tester_name||'';$('#f_date').value=(r.test_date||'').slice(0,10);
+  $('#f_eval').value=r.chef_name||'';$('#f_appr').value=r.approver||'';$('#f_comment').value=r.comment||'';
+  const sc={},nt={}; (r.details||[]).forEach(d=>{sc[d.criteria_code]=d.score;if(d.note)nt[d.criteria_code]=d.note;});
+  $$('#critWrap .crit').forEach(c=>setScore(c,sc[c.dataset.k]??5));calcTotal();
+  $$('#critWrap .crit').forEach(c=>c.querySelector('.critnote').value=nt[c.dataset.k]||'');
+  setPhoto('t',null);setPhoto('a',null);
+  if(r.images){const t=r.images.find(x=>x.image_type==='template'),a=r.images.find(x=>x.image_type==='actual');
+    if(t)setPhoto('t',`${API}/uploads/${t.file_name}`);if(a)setPhoto('a',`${API}/uploads/${a.file_name}`);}
+  $('#saveBtn').textContent='อัปเดต';
+  closeSheet();switchView('new');window.scrollTo({top:0,behavior:'smooth'});
+}
+async function renderSummaryAPI(){
+  const m=$('#sum_month').value; const el=$('#sumBody');
+  if(!m){el.innerHTML=`<div class="empty"><div class="em">📊</div>ยังไม่มีข้อมูล</div>`;return;}
+  let s; try{ s=await api(`/api/summary?month=${m}`); }catch(e){ el.innerHTML=`<div class="empty">โหลดไม่สำเร็จ: ${esc(e.message)}</div>`; return; }
+  const k=s.kpi||{}; const n=k.n||0;
+  if(!n){el.innerHTML=`<div class="empty"><div class="em">📊</div>ยังไม่มีข้อมูลในเดือนนี้</div>`;return;}
+  const avg=Math.round(k.avg_pct||0);
+  const barRow=(label,p,extra='')=>`<div class="bar-row"><div class="bl" title="${esc(label)}">${esc(label)}</div>
+    <div class="bar-track"><div class="bar-fill" style="width:${p}%;background:${colorFor(p)}"></div></div>
+    <div class="bv">${p}%${extra}</div></div>`;
+  el.innerHTML=`
+   <div class="kpis">
+     <div class="kpi"><div class="v">${n}</div><div class="l">การทดสอบ</div></div>
+     <div class="kpi"><div class="v" style="color:${colorFor(avg)}">${avg}%</div><div class="l">คะแนนเฉลี่ย</div></div>
+     <div class="kpi"><div class="v">${k.n_pass||0}/${n}</div><div class="l">ผ่าน ≥80%</div></div>
+     <div class="kpi"><div class="v">${k.n_branch||0}</div><div class="l">สาขา</div></div>
+   </div>
+   <div class="card"><h3><span class="pip"></span>คะแนนเฉลี่ยรายสาขา</h3>
+     ${(s.by_branch||[]).map(x=>barRow(x.shop_name,Math.round(x.avg_pct),` <span style="color:var(--sub);font-weight:400">·${x.n_test}</span>`)).join('')}</div>
+   <div class="card"><h3><span class="pip"></span>คะแนนเฉลี่ยรายหมวด</h3>
+     ${(s.by_group||[]).map(x=>barRow(x.grp,Math.round(x.avg_pct))).join('')}</div>
+   <div class="card"><h3><span class="pip"></span>🔻 หัวข้อที่ได้คะแนนต่ำสุด</h3>
+     <div class="lowlist">${(s.lowest_criteria||[]).map(c=>`<div class="li"><span>${esc(c.label)}</span><span class="x" style="color:${colorFor(Math.round(c.avg_pct))}">${c.avg_score} <span style="color:var(--sub);font-weight:400">(${Math.round(c.avg_pct)}%)</span></span></div>`).join('')}</div></div>`;
+}
+/* =================== END API LAYER =================== */
+
 let records=[];          // index (no images)
 let editingId=null;
 let pendingImg={t:null,a:null}; // dataURLs for current form
@@ -395,15 +527,24 @@ function renderAuthMode(){
   $('#authTitle').textContent=reg?'ลงทะเบียน Area Chef':'เข้าสู่ระบบ';
   $('#authSub').textContent=reg?'สร้างบัญชีผู้ประเมินใหม่':'Food Testing Record · สำหรับ Area Chef';
   $('#authBtn').innerHTML=svgIcon('key')+(reg?' ลงทะเบียน':' เข้าสู่ระบบ');
-  $('#authSwitch').innerHTML=reg?'มีบัญชีแล้ว? <a id="toLogin">เข้าสู่ระบบ</a>':'ยังไม่มีบัญชี? <a id="toReg">ลงทะเบียน Area Chef</a>';
+  $('#authSwitch').innerHTML=USE_API?'':(reg?'มีบัญชีแล้ว? <a id="toLogin">เข้าสู่ระบบ</a>':'ยังไม่มีบัญชี? <a id="toReg">ลงทะเบียน Area Chef</a>');
   authErrMsg('');
   const tl=$('#toLogin'),tr=$('#toReg');
   if(tl)tl.onclick=()=>{authMode='login';renderAuthMode();};
   if(tr)tr.onclick=()=>{authMode='register';renderAuthMode();};
 }
 async function doAuth(){
-  const users=await seedUsers();
   const u=$('#a_user').value.trim(), p=$('#a_pass').value;
+  if(USE_API){
+    if(!u||!p){authErrMsg('กรอกชื่อผู้ใช้และรหัสผ่าน');return;}
+    try{
+      const d=await api('/api/auth/login',{method:'POST',body:{username:u,password:p}});
+      await startSession({u:d.chef.username,name:d.chef.full_name,pos:d.chef.position,chef_id:d.chef.chef_id,token:d.token});
+      await loadRecords(); fillSelectors(); renderList();
+    }catch(e){ authErrMsg(e.message||'เข้าสู่ระบบไม่สำเร็จ'); }
+    return;
+  }
+  const users=await seedUsers();
   if(authMode==='register'){
     const name=$('#a_name').value.trim(), pos=$('#a_pos').value.trim()||'AREA Chef';
     if(!name||!u||!p){authErrMsg('กรอกชื่อ ชื่อผู้ใช้ และรหัสผ่านให้ครบ');return;}
@@ -505,7 +646,28 @@ function setPhoto(which,dataURL){
 async function saveRecord(){
   const menu=$('#f_menu').value.trim(), branch=$('#f_branch').value.trim();
   if(!menu||!branch){toast('กรุณากรอก เมนู และ สาขา');return;}
-  const sc=getScores();const tot=Object.values(sc).reduce((a,b)=>a+b,0);
+  const sc=getScores();
+  if(USE_API){
+    const uidv=editingId||uid();
+    const payload={ test_uid:uidv,
+      shop_code:window._branchMap[branch]||undefined, branch_name:branch,
+      item_code:window._menuMap[menu]||undefined, menu_name:menu,
+      chef_id:session?session.chef_id:undefined, chef_username:session?session.u:undefined,
+      tester_name:$('#f_tester').value.trim(), approver:$('#f_appr').value.trim(),
+      test_date:$('#f_date').value||todayISO(), scores:sc, notes:getNotes(),
+      comment:$('#f_comment').value.trim() };
+    $('#saveBtn').disabled=true;
+    try{
+      const res=await api('/api/tests',{method:'POST',body:payload});
+      if(pendingImg.t) await uploadImg(res.test_uid,'template',pendingImg.t);
+      if(pendingImg.a) await uploadImg(res.test_uid,'actual',pendingImg.a);
+      toast(editingId?'แก้ไขแล้ว ✓':'บันทึกแล้ว ✓');
+      resetForm(); await loadRecords(); fillSelectors(); renderList(); switchView('list');
+    }catch(e){ toast('บันทึกไม่สำเร็จ: '+e.message); }
+    finally{ $('#saveBtn').disabled=false; }
+    return;
+  }
+  const tot=Object.values(sc).reduce((a,b)=>a+b,0);
   const id=editingId||uid();
   const rec={id,date:$('#f_date').value||todayISO(),menu,branch,
     tester:$('#f_tester').value.trim(),eval:$('#f_eval').value.trim(),pos:$('#f_pos').value.trim(),
@@ -547,6 +709,11 @@ async function editRecord(id){
 }
 async function delRecord(id){
   if(!confirm('ลบรายการนี้?'))return;
+  if(USE_API){
+    try{ await api(`/api/tests/${id}`,{method:'DELETE'}); toast('ลบแล้ว'); }
+    catch(e){ toast('ลบไม่สำเร็จ: '+e.message); return; }
+    closeSheet(); await loadRecords(); fillSelectors(); renderList(); renderSummary(); return;
+  }
   records=records.filter(r=>r.id!==id);await Store.set(K_REC,records);await Store.del(K_IMG(id));
   toast('ลบแล้ว');closeSheet();refreshAll();
 }
@@ -580,6 +747,7 @@ function esc(s){return(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':
 
 /* ---------- detail sheet ---------- */
 async function openDetail(id){
+  if(USE_API) return openDetailAPI(id);
   const r=records.find(x=>x.id===id);if(!r)return;
   let img='';
   if(r.hasImg){const im=await Store.get(K_IMG(id));if(im){img=`<div class="detimg">
@@ -619,6 +787,7 @@ $('#ov').onclick=e=>{if(e.target===$('#ov'))closeSheet();};
 
 /* ---------- summary ---------- */
 function renderSummary(){
+  if(USE_API) return renderSummaryAPI();
   const m=$('#sum_month').value;const rows=records.filter(r=>monthKey(r.date)===m);
   const el=$('#sumBody');
   if(!rows.length){el.innerHTML=`<div class="empty"><div class="em">📊</div>ยังไม่มีข้อมูลในเดือนนี้</div>`;return;}
@@ -660,6 +829,7 @@ function renderSummary(){
 
 /* ---------- CSV export ---------- */
 function exportCSV(){
+  if(USE_API){ toast('โหมด API: ส่งออก CSV ผ่านหน้าสรุปฝั่งเซิร์ฟเวอร์ (เร็ว ๆ นี้)'); return; }
   const m=$('#sum_month').value;const rows=records.filter(r=>monthKey(r.date)===m);
   if(!rows.length){toast('ไม่มีข้อมูลให้ส่งออก');return;}
   const head=['วันที่','สาขา','เมนู','ผู้เข้าทดสอบ','ผู้ประเมิน',...ALL_ITEMS.map(i=>i[1]),'รวม','เปอร์เซ็นต์','หมายเหตุรายหัวข้อ','Comments'];
@@ -722,10 +892,11 @@ function injectIcons(){
 async function init(){
   buildForm();$('#f_date').value=todayISO();
   injectIcons();
-  records=(await Store.get(K_REC))||[];
-  fillSelectors();
   await setTheme((await Store.get('ftr_theme'))||'light');
-  await seedUsers();
+  if(USE_API){ loadBranchesUI(); setupMenuSearch(); }
+  else{ await seedUsers(); }
+  await loadRecords();
+  fillSelectors();
 
   // app events
   $$('.tab').forEach(t=>t.onclick=()=>switchView(t.dataset.v));
@@ -745,6 +916,7 @@ async function init(){
   $('#themeBtn').onclick=()=>setTheme(document.documentElement.dataset.t==='dark'?'light':'dark');
   $('#authTheme').onclick=()=>setTheme(document.documentElement.dataset.t==='dark'?'light':'dark');
   $('#logoutBtn').onclick=logout;
+  if(USE_API){ $('#backupBtn').style.display='none'; $('#restoreBtn').style.display='none'; }
 
   // auth events
   $('#authBtn').onclick=doAuth;
