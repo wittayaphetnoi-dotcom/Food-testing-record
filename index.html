@@ -288,7 +288,7 @@ textarea.inp{resize:vertical;min-height:70px}
 
     <div class="totbar">
       <div style="flex:1">
-        <span class="big" id="totVal">0</span><span style="font-size:16px;color:var(--sub)"> / 80</span>
+        <span class="big" id="totVal">0</span><span style="font-size:16px;color:var(--sub)"> / <span id="totMax">80</span></span>
         <span class="badge" id="totBadge" style="margin-left:8px">—</span>
         <div class="pct" id="totPct">0%</div>
       </div>
@@ -357,7 +357,7 @@ const Store=(()=>{
 const K_REC='ftr_records', K_IMG=id=>'ftr_img_'+id;
 
 /* ---------- criteria config ---------- */
-const GROUPS=[
+let GROUPS=[
  {label:'รสชาติและคุณภาพ',items:[
    ['overall','ภาพรวม','ลักษณะอาหารถูกต้องตามมาตรฐาน'],
    ['texture','เนื้อสัมผัส','วัตถุดิบปรุงสุกตามมาตรฐาน ไม่ดิบ/สุกจนเกินไป'],
@@ -378,9 +378,22 @@ const GROUPS=[
    ['multi','ความสามารถอื่น','สามารถปฏิบัติงานนอกเหนือจากแผนกได้'],
    ['language','ภาษา','สามารถบอกชื่ออาหาร/ส่วนผสมเป็นภาษาอังกฤษได้']]}
 ];
-const ALL_ITEMS=GROUPS.flatMap(g=>g.items);
-const MAX=ALL_ITEMS.length*5; // 80
-const LABEL=Object.fromEntries(ALL_ITEMS.map(i=>[i[0],i[1]]));
+let ALL_ITEMS=GROUPS.flatMap(g=>g.items);
+let MAX=ALL_ITEMS.length*5; // 80
+let LABEL=Object.fromEntries(ALL_ITEMS.map(i=>[i[0],i[1]]));
+function rebuildCriteria(rows){
+  // rows = [{criteria_code,grp,label,description,max_score,sort_order}]
+  const byGrp={}; const order=[];
+  rows.forEach(r=>{ if(!byGrp[r.grp]){byGrp[r.grp]=[];order.push(r.grp);} byGrp[r.grp].push(r); });
+  GROUPS=order.map(g=>({label:g, items:byGrp[g].map(r=>[r.criteria_code,r.label,r.description||''])}));
+  ALL_ITEMS=GROUPS.flatMap(g=>g.items);
+  MAX=rows.reduce((a,r)=>a+(r.max_score||5),0);
+  LABEL=Object.fromEntries(ALL_ITEMS.map(i=>[i[0],i[1]]));
+}
+async function loadCriteria(){
+  if(!USE_API) return;
+  try{ const rows=await api('/api/criteria'); if(rows&&rows.length) rebuildCriteria(rows); }catch(e){}
+}
 
 /* ---------- state ---------- */
 /* ===================== API LAYER ===================== */
@@ -640,6 +653,7 @@ function getNotes(){const o={};$$('#critWrap .crit').forEach(c=>{const v=c.query
 function calcTotal(){
   const sc=getScores();const tot=Object.values(sc).reduce((a,b)=>a+b,0);const p=pct(tot);
   $('#totVal').textContent=tot;$('#totPct').textContent=p+'%';
+  const tm=$('#totMax');if(tm)tm.textContent=MAX;
   const b=$('#totBadge');b.style.background=colorFor(p);
   b.textContent=p>=90?'ดีเยี่ยม':p>=80?'ผ่านเกณฑ์':'ต้องปรับปรุง';
 }
@@ -913,6 +927,7 @@ function injectIcons(){
 
 /* ---------- init ---------- */
 async function init(){
+  await loadCriteria();
   buildForm();$('#f_date').value=todayISO();
   injectIcons();
   await setTheme((await Store.get('ftr_theme'))||'light');
