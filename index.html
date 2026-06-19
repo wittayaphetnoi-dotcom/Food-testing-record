@@ -256,8 +256,8 @@ textarea.inp{resize:vertical;min-height:70px}
     <div class="card">
       <h3><span class="pip"></span>ข้อมูลการทดสอบ</h3>
       <div class="grid2">
-        <div><label class="fl">รายการ / เมนู *</label><input class="inp" id="f_menu" placeholder="เช่น ปีกไก่ทอดน้ำปลา"></div>
-        <div><label class="fl">สถานที่ / สาขา *</label><input class="inp" id="f_branch" placeholder="เช่น EM-Emporium" list="branchList"><datalist id="branchList"></datalist></div>
+        <div><label class="fl">รายการ / เมนู *</label><input class="inp" id="f_menu" placeholder="เช่น แกงจืดเงาะยัดไส้หมูสับ"></div>
+        <div><label class="fl">สถานที่ / สาขา *</label><input class="inp" id="f_branch" placeholder="เช่น EMQ NARA" list="branchList"><datalist id="branchList"></datalist></div>
         <div><label class="fl">ผู้เข้าทดสอบ</label><input class="inp" id="f_tester" placeholder="ชื่อผู้เข้าทดสอบ"></div>
         <div><label class="fl">วันที่</label><input class="inp" type="date" id="f_date"></div>
         <div><label class="fl">ผู้ประเมิน</label><input class="inp" id="f_eval" placeholder="ชื่อผู้ประเมิน"></div>
@@ -309,6 +309,29 @@ textarea.inp{resize:vertical;min-height:70px}
 
   <!-- ========== SUMMARY ========== -->
   <section class="view" id="v-sum">
+    <div class="filters" style="flex-wrap:wrap">
+      <select class="inp" id="sum_range" style="flex:1;min-width:120px">
+        <option value="6">6 เดือนล่าสุด</option>
+        <option value="12">12 เดือนล่าสุด</option>
+        <option value="3">3 เดือนล่าสุด</option>
+      </select>
+      <select class="inp" id="sum_branch" style="flex:1;min-width:140px"><option value="">ทุกสาขา (เทรนด์รวม)</option></select>
+    </div>
+    <div class="card" id="trendCard">
+      <h3><span class="pip"></span>เทรนด์คะแนนเฉลี่ยรายเดือน</h3>
+      <div id="trendLegend" style="display:flex;gap:16px;margin-bottom:8px;font-size:12px;color:var(--sub)"></div>
+      <div style="position:relative;width:100%;height:230px"><canvas id="trendChart"></canvas></div>
+    </div>
+    <div class="card" id="heatCard">
+      <h3><span class="pip"></span>ฮีตแมป สาขา × เดือน</h3>
+      <div style="font-size:12.5px;color:var(--sub);margin:-4px 0 12px">เห็นทันทีว่าสาขาไหนตกเดือนไหน · แตะช่องเพื่อดูเดือนนั้น</div>
+      <div id="heatWrap" style="overflow-x:auto"></div>
+      <div style="display:flex;gap:14px;margin-top:10px;font-size:12px;color:var(--sub)">
+        <span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;background:var(--green);display:inline-block"></span>≥90</span>
+        <span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;background:var(--amber);display:inline-block"></span>80–89</span>
+        <span style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;background:var(--red);display:inline-block"></span>&lt;80</span>
+      </div>
+    </div>
     <div class="filters">
       <select class="inp" id="sum_month"></select>
       <button class="btn ghost sm" id="csvBtn">⬇ CSV</button>
@@ -328,6 +351,7 @@ textarea.inp{resize:vertical;min-height:70px}
 <div class="ov" id="ov"><div class="sheet" id="sheet"></div></div>
 <div class="toast" id="toast"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
 /* ---------- renthub-icons (inline, fill currentColor) ---------- */
 const SVGICONS={
@@ -540,7 +564,57 @@ async function renderSummaryAPI(){
    <div class="card"><h3><span class="pip"></span>🔻 หัวข้อที่ได้คะแนนต่ำสุด</h3>
      <div class="lowlist">${(s.lowest_criteria||[]).map(c=>`<div class="li"><span>${esc(c.label)}</span><span class="x" style="color:${colorFor(Math.round(c.avg_pct))}">${c.avg_score} <span style="color:var(--sub);font-weight:400">(${Math.round(c.avg_pct)}%)</span></span></div>`).join('')}</div></div>`;
 }
-/* =================== END API LAYER =================== */
+let _trendChart=null;
+function ymThai(ym){const[y,m]=ym.split('-');const mn=['','ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];return mn[+m]+' '+((+y)+543-2500);}
+async function fillBranchFilter(){
+  if(!USE_API)return;
+  try{ const rows=await api('/api/branches?limit=1000');
+    $('#sum_branch').innerHTML='<option value="">ทุกสาขา (เทรนด์รวม)</option>'+rows.map(r=>`<option value="${esc(r.shop_code)}">${esc(r.name)}</option>`).join('');
+  }catch(e){}
+}
+async function renderTrend(){
+  if(!USE_API||typeof Chart==='undefined')return;
+  const months=+$('#sum_range').value||6; const sc=$('#sum_branch').value;
+  let all,one=null;
+  try{
+    all=await api(`/api/trend?months=${months}`);
+    if(sc) one=await api(`/api/trend?months=${months}&shop_code=${encodeURIComponent(sc)}`);
+  }catch(e){ return; }
+  const labels=all.months.map(ymThai);
+  const dsAll=all.series.map(x=>x.avg_pct);
+  const ds=[{label:'ทุกสาขา',data:dsAll,borderColor:'#e8590c',backgroundColor:'#e8590c',tension:.3,spanGaps:true,pointRadius:3}];
+  let legend=`<span style="display:flex;align-items:center;gap:5px"><span style="width:14px;height:3px;background:#e8590c;display:inline-block"></span>ทุกสาขา</span>`;
+  if(one){
+    const bn=$('#sum_branch').selectedOptions[0].textContent;
+    ds.push({label:bn,data:one.series.map(x=>x.avg_pct),borderColor:'#378ADD',borderDash:[6,4],tension:.3,spanGaps:true,pointRadius:3});
+    legend+=`<span style="display:flex;align-items:center;gap:5px"><span style="width:14px;height:0;border-top:3px dashed #378ADD;display:inline-block"></span>${esc(bn)}</span>`;
+  }
+  $('#trendLegend').innerHTML=legend;
+  if(_trendChart)_trendChart.destroy();
+  _trendChart=new Chart($('#trendChart'),{type:'line',data:{labels,datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{suggestedMin:60,suggestedMax:100,ticks:{callback:v=>v+'%'}}}}});
+}
+async function renderHeatmap(){
+  if(!USE_API)return;
+  const months=+$('#sum_range').value||6;
+  let h; try{ h=await api(`/api/heatmap?months=${months}`); }catch(e){ return; }
+  const cell=v=>v==null?'var(--line)':v>=90?'var(--green)':v>=80?'var(--amber)':'var(--red)';
+  let html=`<div style="display:grid;grid-template-columns:120px repeat(${h.months.length},minmax(46px,1fr));gap:4px;font-size:12px;min-width:${120+h.months.length*50}px">`;
+  html+='<div></div>'+h.months.map(m=>`<div style="text-align:center;color:var(--sub)">${ymThai(m).replace(' ','\u00a0')}</div>`).join('');
+  if(!h.branches.length){ $('#heatWrap').innerHTML='<div class="empty">ยังไม่มีข้อมูลในช่วงนี้</div>'; return; }
+  h.branches.forEach(b=>{
+    html+=`<div style="color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;align-self:center" title="${esc(b.shop_name)}">${esc(b.shop_name)}</div>`;
+    h.months.forEach(m=>{
+      const c=b.by_month[m]; const v=c?Math.round(c.pct):null;
+      html+=`<div data-m="${m}" style="background:${cell(v)};color:${v==null?'var(--sub)':'#fff'};border-radius:4px;text-align:center;padding:8px 0;font-weight:${v==null?400:600};cursor:${v==null?'default':'pointer'}">${v==null?'–':v}</div>`;
+    });
+  });
+  html+='</div>';
+  $('#heatWrap').innerHTML=html;
+  $('#heatWrap').querySelectorAll('[data-m]').forEach(el=>{ if(el.textContent!=='–') el.onclick=()=>{ $('#sum_month').value=el.dataset.m; renderSummary(); document.getElementById('sumBody').scrollIntoView({behavior:'smooth'}); }; });
+}
+function renderAnalytics(){ if(USE_API){ renderTrend(); renderHeatmap(); } }
 
 let records=[];          // index (no images)
 let editingId=null;
@@ -902,7 +976,7 @@ function restore(file){
 function switchView(v){
   $$('.tab').forEach(t=>t.classList.toggle('active',t.dataset.v===v));
   $$('.view').forEach(s=>s.classList.toggle('active',s.id==='v-'+v));
-  if(v==='list')renderList();if(v==='sum')renderSummary();
+  if(v==='list')renderList();if(v==='sum'){renderSummary();renderAnalytics();}
   window.scrollTo({top:0,behavior:'instant'});
 }
 function refreshAll(){fillSelectors();renderList();renderSummary();}
@@ -947,6 +1021,9 @@ async function init(){
   ['flt_month','flt_branch'].forEach(i=>$('#'+i).onchange=renderList);
   $('#flt_search').oninput=renderList;
   $('#sum_month').onchange=renderSummary;
+  $('#sum_range').onchange=renderAnalytics;
+  $('#sum_branch').onchange=renderTrend;
+  if(USE_API){ fillBranchFilter(); } else { $('#trendCard').style.display='none'; $('#heatCard').style.display='none'; $('#sum_range').style.display='none'; $('#sum_branch').style.display='none'; }
   $('#csvBtn').onclick=exportCSV;
   $('#backupBtn').onclick=backup;
   $('#restoreBtn').onclick=()=>$('#restoreFile').click();
