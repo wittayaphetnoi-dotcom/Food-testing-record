@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>แบบตรวจคุณภาพโดนัท | Donut QC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f4f5f7; --card:#ffffff; --text:#1a1a1a; --muted:#6b7280;
+  --line:#e5e7eb; --accent:#FF6B00; --accent-soft:#fff1e6;
+  --good:#16a34a; --warn:#d97706; --bad:#dc2626;
+  --shadow:0 4px 16px rgba(0,0,0,.06);
+}
+[data-t="dark"]{
+  --bg:#0f1115; --card:#1a1d24; --text:#f3f4f6; --muted:#9ca3af;
+  --line:#2b2f38; --accent:#FF7A1A; --accent-soft:#3a2410;
+  --good:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+  --shadow:0 4px 18px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  font-family:'Prompt',-apple-system,system-ui,sans-serif;
+  background:var(--bg); color:var(--text);
+  font-size:15px; line-height:1.55;
+  padding-bottom:120px; /* room for sticky bar */
+  transition:background .25s,color .25s;
+}
+.wrap{max-width:760px;margin:0 auto;padding:0 14px}
+
+/* Topbar */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  background:rgba(255,255,255,.75);
+  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);
+}
+[data-t="dark"] .topbar{background:rgba(15,17,21,.7)}
+.topbar .wrap{display:flex;align-items:center;gap:10px;padding-top:12px;padding-bottom:12px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:17px;flex:1}
+.brand .ic{font-size:24px;filter:saturate(1.2)}
+.brand small{display:block;font-weight:400;font-size:11px;color:var(--muted)}
+.tbtn{
+  border:1.5px solid var(--line);background:var(--card);color:var(--text);
+  width:42px;height:42px;border-radius:50px;font-size:18px;cursor:pointer;
+  display:grid;place-items:center;transition:transform .12s,border-color .2s;
+}
+.tbtn:active{transform:scale(.92)}
+
+/* Cards */
+.card{
+  background:var(--card);border:1px solid var(--line);border-radius:14px;
+  box-shadow:var(--shadow);padding:16px;margin-top:14px;
+}
+.card h2{margin:0 0 12px;font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+.card h2 .tag{
+  background:var(--accent-soft);color:var(--accent);font-size:12px;font-weight:600;
+  padding:2px 9px;border-radius:50px;
+}
+.gmax{margin-left:auto;font-size:12px;font-weight:500;color:var(--muted)}
+
+/* Meta grid */
+.meta{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.meta .full{grid-column:1/-1}
+.field label{display:block;font-size:12.5px;font-weight:500;color:var(--muted);margin-bottom:5px}
+.field input, .field select, .field textarea{
+  width:100%;font-family:inherit;font-size:15px;color:var(--text);
+  background:var(--bg);border:1.5px solid var(--line);border-radius:10px;
+  padding:11px 12px;transition:border-color .2s;
+}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--accent)}
+.field textarea{resize:vertical;min-height:78px}
+
+/* Criteria rows */
+.crit{padding:11px 0;border-top:1px dashed var(--line)}
+.crit:first-of-type{border-top:none}
+.crit .name{font-size:14px;font-weight:500;margin-bottom:9px;display:flex;align-items:center;gap:8px}
+.crit .name .n{
+  flex:none;width:22px;height:22px;border-radius:6px;background:var(--bg);
+  display:grid;place-items:center;font-size:11px;color:var(--muted);font-weight:600;
+}
+.scale{display:flex;gap:7px}
+.scale button{
+  flex:1;min-width:0;height:44px;border:1.5px solid var(--line);background:var(--card);
+  color:var(--muted);border-radius:10px;font-family:inherit;font-size:16px;font-weight:600;
+  cursor:pointer;transition:transform .1s,background .15s,color .15s,border-color .15s;
+}
+.scale button:active{transform:scale(.9)}
+.scale button.on{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 3px 10px rgba(255,107,0,.35)}
+
+/* Photo */
+.photo-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.photo-btn{
+  border:1.5px dashed var(--line);background:var(--bg);color:var(--muted);
+  border-radius:12px;padding:14px 18px;font-family:inherit;font-size:14px;cursor:pointer;
+  display:flex;align-items:center;gap:8px;transition:border-color .2s,color .2s;
+}
+.photo-btn:active{transform:scale(.97)}
+.photo-btn:hover{border-color:var(--accent);color:var(--accent)}
+#thumbs{display:flex;gap:8px;flex-wrap:wrap}
+#thumbs img{width:66px;height:66px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+
+/* Sticky summary */
+.sticky{
+  position:fixed;left:0;right:0;bottom:0;z-index:60;
+  background:var(--card);border-top:1px solid var(--line);
+  box-shadow:0 -6px 24px rgba(0,0,0,.10);
+  padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+}
+.sticky .inner{max-width:760px;margin:0 auto;display:flex;align-items:center;gap:14px}
+.score-box{flex:1;min-width:0}
+.score-box .big{font-size:22px;font-weight:700;line-height:1.1}
+.score-box .big small{font-size:14px;color:var(--muted);font-weight:500}
+.score-box .sub{font-size:12.5px;color:var(--muted)}
+.badge{font-size:13px;font-weight:600;padding:5px 12px;border-radius:50px;white-space:nowrap}
+.badge.good{background:rgba(22,163,74,.14);color:var(--good)}
+.badge.warn{background:rgba(217,119,6,.14);color:var(--warn)}
+.badge.bad{background:rgba(220,38,38,.14);color:var(--bad)}
+.bar{height:7px;border-radius:50px;background:var(--line);overflow:hidden;margin-top:7px}
+.bar i{display:block;height:100%;width:0;border-radius:50px;background:var(--accent);transition:width .35s ease,background .35s}
+.submit{
+  flex:none;border:none;background:var(--accent);color:#fff;font-family:inherit;
+  font-size:15px;font-weight:600;padding:13px 22px;border-radius:50px;cursor:pointer;
+  transition:transform .12s,opacity .2s;box-shadow:0 4px 14px rgba(255,107,0,.35);
+}
+.submit:active{transform:scale(.95)}
+.submit:disabled{opacity:.45;box-shadow:none;cursor:not-allowed}
+
+/* Toast */
+#toast{
+  position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-120%);
+  background:var(--text);color:var(--card);padding:11px 20px;border-radius:50px;
+  font-size:14px;font-weight:500;z-index:100;transition:transform .35s cubic-bezier(.2,.9,.3,1.2);
+  box-shadow:0 8px 24px rgba(0,0,0,.25);
+}
+#toast.show{transform:translateX(-50%) translateY(0)}
+
+footer{text-align:center;color:var(--muted);font-size:12px;padding:18px 0 6px}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="wrap">
+    <div class="brand">
+      <span class="ic">🍩</span>
+      <span>แบบบันทึกตรวจคุณภาพโดนัท
+        <small>Donut Factory QC Record</small>
+      </span>
+    </div>
+    <button class="tbtn" id="themeBtn" title="สลับโหมด" onclick="toggleTheme()">🌙</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- META -->
+  <div class="card">
+    <h2>📋 ข้อมูลการตรวจ</h2>
+    <div class="meta">
+      <div class="field"><label>วันที่ตรวจ</label><input type="date" id="m_date"></div>
+      <div class="field"><label>กะการผลิต / Lot No.</label><input type="text" id="m_lot" placeholder="เช่น A-2026/0624-01"></div>
+      <div class="field"><label>สายการผลิต</label>
+        <select id="m_line">
+          <option value="">— เลือก —</option>
+          <option>Line 1</option><option>Line 2</option><option>Line 3</option><option>Line 4</option>
+        </select>
+      </div>
+      <div class="field"><label>ชนิดโดนัท</label>
+        <select id="m_type">
+          <option value="">— เลือก —</option>
+          <option>Ring (เคลือบน้ำตาล)</option>
+          <option>Glazed (เคลือบ)</option>
+          <option>Filled (สอดไส้)</option>
+          <option>Cake Donut</option>
+          <option>Topping/Sprinkle</option>
+        </select>
+      </div>
+      <div class="field full"><label>ผู้ตรวจ (QC)</label><input type="text" id="m_qc" placeholder="ชื่อ-นามสกุล / รหัสพนักงาน"></div>
+    </div>
+  </div>
+
+  <!-- GROUPS -->
+  <div id="groups"></div>
+
+  <!-- PHOTO + NOTE -->
+  <div class="card">
+    <h2>📷 รูปประกอบ & หมายเหตุ</h2>
+    <div class="photo-row" style="margin-bottom:14px">
+      <button class="photo-btn" onclick="document.getElementById('photoInput').click()">📎 แนบรูปตัวอย่าง</button>
+      <div id="thumbs"></div>
+    </div>
+    <input type="file" id="photoInput" accept="image/*" capture="environment" multiple hidden onchange="addPhotos(event)">
+    <div class="field"><label>หมายเหตุ / สิ่งที่พบ (Findings)</label>
+      <textarea id="note" placeholder="เช่น สีเข้มไม่สม่ำเสมอ, เคลือบไม่ทั่ว, อมน้ำมัน..."></textarea>
+    </div>
+    <div class="field" style="margin-top:12px"><label>การแก้ไข (Corrective Action)</label>
+      <textarea id="action" placeholder="เช่น ปรับอุณหภูมิน้ำมัน, ลดเวลาทอด, ตรวจสอบเครื่องเคลือบ..."></textarea>
+    </div>
+  </div>
+
+  <footer>อ้างอิงโครงสร้างจาก Food Test Record · เกณฑ์ 0–5 · เต็ม 80 คะแนน</footer>
+</div>
+
+<!-- STICKY SUMMARY -->
+<div class="sticky">
+  <div class="inner">
+    <div class="score-box">
+      <div class="big"><span id="scoreNow">0</span> <small>/ 80</small> &nbsp;<span id="percent" style="font-size:15px;color:var(--accent);font-weight:600">0%</span></div>
+      <div class="bar"><i id="bar"></i></div>
+      <div class="sub" id="filled">ให้คะแนนแล้ว 0/16 ข้อ</div>
+    </div>
+    <span class="badge warn" id="verdict">รอประเมิน</span>
+    <button class="submit" id="submitBtn" onclick="submitForm()">บันทึกผล</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ===== เกณฑ์การตรวจ 16 ข้อ / 4 กลุ่ม ===== */
+const GROUPS = [
+  { tag:"กลุ่ม 1", name:"ลักษณะภายนอก", items:[
+    "รูปร่าง & ขนาดสม่ำเสมอ",
+    "สีผิว (น้ำตาลทองสม่ำเสมอ)",
+    "การเคลือบ / ท็อปปิ้ง ทั่วถึง",
+    "ความสะอาด / ไม่มีสิ่งแปลกปลอม",
+  ]},
+  { tag:"กลุ่ม 2", name:"เนื้อสัมผัส & โครงสร้าง", items:[
+    "ความนุ่ม ฟู",
+    "โครงสร้างเนื้อใน (รูอากาศสม่ำเสมอ)",
+    "ความชื้น (ไม่แห้ง/ไม่แฉะ)",
+    "การอมน้ำมัน (ไม่เลี่ยน)",
+  ]},
+  { tag:"กลุ่ม 3", name:"รสชาติ & กลิ่น", items:[
+    "รสชาติแป้ง / เนื้อโดนัท",
+    "ความหวานสมดุล",
+    "กลิ่นหอม (ไม่มีกลิ่นน้ำมันเก่า)",
+    "คุณภาพไส้ / ครีม",
+  ]},
+  { tag:"กลุ่ม 4", name:"มาตรฐานการผลิต", items:[
+    "น้ำหนักตามสเปก",
+    "ขนาดรู / ความสม่ำเสมอชิ้นงาน",
+    "บรรจุภัณฑ์ (สะอาด/ปิดสนิท)",
+    "ความสด / อายุการเก็บ",
+  ]},
+];
+const TOTAL_ITEMS = GROUPS.reduce((s,g)=>s+g.items.length,0); // 16
+const MAX = TOTAL_ITEMS * 5; // 80
+const scores = {}; // key: "g-i" -> 0..5
+let photos = [];
+
+/* ===== render กลุ่ม + ปุ่มคะแนน ===== */
+function render(){
+  const root = document.getElementById('groups');
+  GROUPS.forEach((g, gi)=>{
+    const card = document.createElement('div');
+    card.className='card';
+    card.innerHTML = `<h2><span class="tag">${g.tag}</span> ${g.name}
+      <span class="gmax">เต็ม ${g.items.length*5}</span></h2>`;
+    g.items.forEach((label, ii)=>{
+      const key = gi+'-'+ii;
+      const row = document.createElement('div');
+      row.className='crit';
+      let btns='';
+      for(let s=0;s<=5;s++) btns += `<button data-key="${key}" data-val="${s}" onclick="pick(this)">${s}</button>`;
+      row.innerHTML = `<div class="name"><span class="n">${ii+1}</span>${label}</div>
+                       <div class="scale">${btns}</div>`;
+      card.appendChild(row);
+    });
+    root.appendChild(card);
+  });
+}
+
+function pick(btn){
+  const key = btn.dataset.key, val = +btn.dataset.val;
+  scores[key] = val;
+  // toggle UI
+  document.querySelectorAll(`.scale button[data-key="${key}"]`).forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  recalc();
+}
+
+function recalc(){
+  let sum=0, filled=0;
+  Object.values(scores).forEach(v=>{ sum+=v; filled++; });
+  const pct = Math.round(sum/MAX*100);
+  document.getElementById('scoreNow').textContent = sum;
+  document.getElementById('percent').textContent = pct+'%';
+  document.getElementById('bar').style.width = pct+'%';
+  document.getElementById('filled').textContent = `ให้คะแนนแล้ว ${filled}/${TOTAL_ITEMS} ข้อ`;
+
+  // verdict
+  const v = document.getElementById('verdict');
+  let cls='warn', txt='รอประเมิน', color='var(--warn)';
+  if(filled < TOTAL_ITEMS){ cls='warn'; txt=`เหลืออีก ${TOTAL_ITEMS-filled} ข้อ`; }
+  else if(pct>=80){ cls='good'; txt='✅ ผ่าน'; color='var(--good)'; }
+  else if(pct>=60){ cls='warn'; txt='⚠️ ผ่านแบบมีเงื่อนไข'; color='var(--warn)'; }
+  else { cls='bad'; txt='❌ ไม่ผ่าน (Reject)'; color='var(--bad)'; }
+  v.className='badge '+cls; v.textContent=txt;
+  document.getElementById('bar').style.background = color;
+  document.getElementById('submitBtn').disabled = filled < TOTAL_ITEMS;
+}
+
+/* ===== รูป ===== */
+function addPhotos(e){
+  [...e.target.files].forEach(f=>{
+    const url = URL.createObjectURL(f);
+    photos.push(f);
+    const img = document.createElement('img');
+    img.src=url; img.alt='ตัวอย่างโดนัท';
+    document.getElementById('thumbs').appendChild(img);
+  });
+  e.target.value='';
+}
+
+/* ===== theme ===== */
+function toggleTheme(){
+  const cur = document.documentElement.getAttribute('data-t')==='dark'?'light':'dark';
+  document.documentElement.setAttribute('data-t', cur);
+  document.getElementById('themeBtn').textContent = cur==='dark'?'☀️':'🌙';
+  try{ localStorage.setItem('donut_qc_theme', cur); }catch(e){}
+}
+
+/* ===== toast ===== */
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2400);
+}
+
+/* ===== submit ===== */
+function submitForm(){
+  const sum = Object.values(scores).reduce((a,b)=>a+b,0);
+  const pct = Math.round(sum/MAX*100);
+  const result = pct>=80?'PASS':(pct>=60?'CONDITIONAL':'REJECT');
+
+  // โครงสร้าง payload — ปรับ key ให้ตรง ft_* table แล้ว POST ไป FastAPI ได้เลย
+  const payload = {
+    date: val('m_date'),
+    lot: val('m_lot'),
+    line: val('m_line'),
+    donut_type: val('m_type'),
+    inspector: val('m_qc'),
+    scores: scores,          // { "0-0":5, "0-1":4, ... }
+    total: sum,
+    max: MAX,
+    percent: pct,
+    result: result,          // PASS / CONDITIONAL / REJECT
+    note: val('note'),
+    corrective: val('action'),
+    photo_count: photos.length,
+  };
+  console.log('QC PAYLOAD →', payload);
+
+  /* ===== ต่อ backend จริงทีหลัง (ตัวอย่าง) =====
+  fetch('https://foodtest.mobile1234.site/api/donut-qc', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-API-Key':'<key>','X-Chef-Token':'<token>'},
+    body: JSON.stringify(payload)
+  }).then(r=>r.json()).then(d=>toast('บันทึกสำเร็จ ✅'))
+    .catch(()=>toast('บันทึกไม่สำเร็จ ❌'));
+  ============================================ */
+
+  if(!val('m_qc') || !val('m_lot')){ toast('กรุณากรอก Lot และผู้ตรวจ'); return; }
+  toast(`บันทึกแล้ว · ${sum}/${MAX} (${pct}%) · ${result}`);
+}
+function val(id){ return document.getElementById(id).value.trim(); }
+
+/* ===== init ===== */
+(function init(){
+  render();
+  recalc();
+  // วันที่วันนี้
+  document.getElementById('m_date').value = new Date().toISOString().slice(0,10);
+  // theme เดิม
+  try{
+    const saved = localStorage.getItem('donut_qc_theme');
+    if(saved){ document.documentElement.setAttribute('data-t', saved);
+      document.getElementById('themeBtn').textContent = saved==='dark'?'☀️':'🌙'; }
+  }catch(e){}
+})();
+</script>
+</body>
+</html>
